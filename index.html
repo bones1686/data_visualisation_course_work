@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Сон під вогнем · Sleep Under Fire</title>
+
+  <!-- Chart.js — only external dependency -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* ─────────────────────────────────────────────────────────
+       DESIGN TOKENS — night / sleep colour palette
+       ───────────────────────────────────────────────────────── */
+    :root {
+      --bg:          #060d1b;   /* deepest night sky               */
+      --surface:     #0d1729;   /* card background                 */
+      --surface-2:   #152036;   /* hover / secondary surface       */
+      --border:      #1c2d45;   /* subtle dividers                 */
+
+      --text:        #e6edf7;   /* primary text                    */
+      --muted:       #8899bb;   /* secondary text                  */
+      --subtle:      #3a4a6a;   /* de-emphasised                   */
+
+      /* sleep-stage colours */
+      --c-rem:       #7c3aed;   /* purple  — REM                   */
+      --c-deep:      #0284c7;   /* blue    — deep / SWS            */
+      --c-light:     #334155;   /* grey-blue — light               */
+      --c-wake:      #dc2626;   /* red     — WASO / wake           */
+
+      /* metric colours */
+      --c-quality:   #10b981;   /* green   — sleep quality         */
+      --c-score:     #f59e0b;   /* amber   — device score          */
+      --c-bad:       #ef4444;   /* red     — high interruptions    */
+      --c-good:      #22c55e;   /* green   — low interruptions     */
+      --c-mid:       #f59e0b;   /* amber   — transition            */
+
+      --radius:      16px;
+      --radius-sm:   8px;
+    }
+
+    /* ─── Reset ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      line-height: 1.5;
+      min-height: 100vh;
+      padding: clamp(1rem, 4vw, 2rem);
+    }
+
+    /* ─── Stars background decoration ───────────────────────── */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(1px 1px at 15% 12%, rgba(255,255,255,0.25) 0%, transparent 100%),
+        radial-gradient(1px 1px at 72% 8%,  rgba(255,255,255,0.18) 0%, transparent 100%),
+        radial-gradient(1px 1px at 40% 30%, rgba(255,255,255,0.15) 0%, transparent 100%),
+        radial-gradient(1px 1px at 88% 22%, rgba(255,255,255,0.20) 0%, transparent 100%),
+        radial-gradient(1px 1px at 55% 5%,  rgba(255,255,255,0.22) 0%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 5% 50%, rgba(255,255,255,0.12) 0%, transparent 100%),
+        radial-gradient(1px 1px at 95% 60%, rgba(255,255,255,0.15) 0%, transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* everything sits above the stars */
+    .page { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; }
+
+    /* ─── HEADER ─────────────────────────────────────────────── */
+    .header {
+      text-align: center;
+      padding: clamp(1.5rem, 5vw, 3rem) 1rem clamp(1.5rem, 3vw, 2rem);
+    }
+
+    .header .eyebrow {
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+
+    /* Gradient title — adapts size fluidly */
+    .header h1 {
+      font-size: clamp(1.8rem, 6vw, 3.4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      background: linear-gradient(140deg, #e6edf7 20%, #7c9cbf 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.75rem;
+    }
+
+    .header .subtitle {
+      font-size: clamp(0.85rem, 2.2vw, 1.05rem);
+      color: var(--muted);
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    /* ─── STAT CARDS ─────────────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 0.875rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.3rem;
+      position: relative;
+      overflow: hidden;
+      /* accent top bar via CSS custom property set inline */
+      border-top: 3px solid var(--accent, var(--c-quality));
+    }
+
+    .stat-card .s-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .stat-card .s-value {
+      font-size: clamp(1.4rem, 3.5vw, 2rem);
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+      margin-bottom: 0.35rem;
+    }
+
+    .stat-card .s-change {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .stat-card .s-change.good { color: var(--c-quality); }
+    .stat-card .s-change.bad  { color: var(--c-bad); }
+
+    /* ─── CHART LAYOUT ───────────────────────────────────────── */
+    .charts-grid {
+      display: grid;
+      gap: 1rem;
+      /* One column on mobile; two on wider screens */
+      grid-template-columns: 1fr;
+    }
+
+    /* Desktop: side-by-side for the lower two cards */
+    @media (min-width: 860px) {
+      .charts-grid { grid-template-columns: 1fr 1fr; }
+      .chart-card.span-2 { grid-column: 1 / -1; }
+    }
+
+    /* ─── CHART CARD ─────────────────────────────────────────── */
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.4rem;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .card-title  { font-size: 0.9rem; font-weight: 600; }
+    .card-sub    { font-size: 0.72rem; color: var(--muted); margin-top: 0.15rem; }
+
+    /* Badge used for annotations / callouts */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: rgba(251, 191, 36, 0.12);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      color: #fbbf24;
+      border-radius: 5px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.67rem;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    /* Canvas wrapper keeps chart at a fixed height */
+    .chart-wrap {
+      position: relative;
+      height: clamp(220px, 30vw, 320px);
+    }
+
+    /* Taller for the full-width timeline */
+    .chart-wrap.tall {
+      height: clamp(240px, 35vw, 360px);
+    }
+
+    /* ─── TABS (for sleep-stage toggle) ─────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .tab-btn {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.3rem 0.75rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+
+    .tab-btn.active {
+      background: rgba(2, 132, 199, 0.15);
+      border-color: rgba(2, 132, 199, 0.5);
+      color: #38bdf8;
+    }
+
+    /* ─── LEGEND ─────────────────────────────────────────────── */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      margin-top: 0.85rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.68rem;
+      color: var(--muted);
+    }
+
+    .legend-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ─── INSIGHT BOX ────────────────────────────────────────── */
+    /* Small narrative callout shown below the interruption chart */
+    .insight-box {
+      margin-top: 0.9rem;
+      padding: 0.75rem 1rem;
+      background: rgba(34, 197, 94, 0.07);
+      border: 1px solid rgba(34, 197, 94, 0.2);
+      border-radius: var(--radius-sm);
+      font-size: 0.73rem;
+      color: #86efac;
+      line-height: 1.6;
+    }
+
+    /* ─── FOOTER ─────────────────────────────────────────────── */
+    .footer {
+      text-align: center;
+      margin-top: 2rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.68rem;
+      color: var(--subtle);
+      line-height: 1.8;
+    }
+
+    /* ─── MOBILE TWEAKS ──────────────────────────────────────── */
+    @media (max-width: 500px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ══════════════════════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════════════════════ -->
+  <header class="header">
+    <p class="eyebrow">Дослідження · Sleep2Ukraine · PLOS ONE 2024</p>
+
+    <!-- Title uses bilingual stack — Ukrainian headline, English sub-headline -->
+    <h1>
+      Сон під вогнем<br>
+      <span style="font-size: 0.55em; opacity: 0.75; font-weight: 600;">
+        Sleep Under Fire
+      </span>
+    </h1>
+
+    <p class="subtitle">
+      Як цифрова КПТ-I терапія змінила сон 113 українців
+      під час активних бойових дій —
+      <strong style="color: var(--text)">2&thinsp;689 ночей</strong> об'єктивних вимірювань
+    </p>
+  </header>
+
+
+  <!-- ══════════════════════════════════════════════════════════
+       KEY-STAT CARDS  (4 headline numbers at a glance)
+  ══════════════════════════════════════════════════════════ -->
+  <div class="stats-row">
+
+    <!-- Participants -->
+    <div class="stat-card" style="--accent: #7c3aed;">
+      <div class="s-label">Учасники / Participants</div>
+      <div class="s-value">113</div>
+      <div class="s-change">2 689 ночей спостережень</div>
+    </div>
+
+    <!-- Sleep quality change -->
+    <div class="stat-card" style="--accent: var(--c-quality);">
+      <div class="s-label">Якість сну (1–10) / Sleep Quality</div>
+      <!-- First vs last programme weeks (weeks 2-5 vs weeks 20-23) -->
+      <div class="s-value">6.3 → 7.2</div>
+      <div class="s-change good">↑ +14% покращення</div>
+    </div>
+
+    <!-- Interruption drama -->
+    <div class="stat-card" style="--accent: var(--c-bad);">
+      <div class="s-label">Перерви сну за ніч / Night Interruptions</div>
+      <div class="s-value">~26 → 2</div>
+      <div class="s-change good">↓ −93% скорочення</div>
+    </div>
+
+    <!-- WASO -->
+    <div class="stat-card" style="--accent: var(--c-score);">
+      <div class="s-label">WASO — неспання після засинання</div>
+      <div class="s-value">51 → 28 хв</div>
+      <div class="s-change good">↓ −45% менше</div>
+    </div>
+
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════════
+       CHARTS
+  ══════════════════════════════════════════════════════════ -->
+  <div class="charts-grid">
+
+    <!-- ── CHART 1: SLEEP QUALITY TIMELINE (full-width) ──── -->
+    <!--
+      WHY LINE CHART?
+      Temporal trend data — we want to see the TRAJECTORY of
+      improvement across 23 weeks, not just categories.
+      Two series (subjective quality + device score) use different
+      visual weights: filled area vs dashed line.
+    -->
+    <div class="chart-card span-2">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Щотижнева динаміка якості сну</div>
+          <div class="card-sub">Середні значення · жовтень 2023 — березень 2024 · 23 тижні</div>
+        </div>
+        <span class="badge">🔬 6-тижнева КПТ-I програма</span>
+      </div>
+
+      <div class="chart-wrap tall">
+        <canvas id="qualityChart" aria-label="Графік якості сну по тижнях"></canvas>
+      </div>
+
+      <!-- Legend for the two lines -->
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--c-quality);"></div>
+          Суб'єктивна якість сну (самооцінка, 1–10)
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--c-score);"></div>
+          Оцінка пристрою (алгоритм Oura / Garmin)
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ── CHART 2: SLEEP INTERRUPTIONS BAR CHART ─────────── -->
+    <!--
+      WHY BAR CHART?
+      The ABRUPT DROP from ~26 to 2 is the most dramatic single
+      insight.  Bars make magnitude differences visceral — the
+      last four bars are almost invisible compared to the rest.
+      Colour encodes severity: red → amber → green.
+    -->
+    <div class="chart-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Перерви сну за ніч (середнє)</div>
+          <div class="card-sub">Найдраматичніша зміна у даних</div>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <canvas id="interruptChart" aria-label="Кількість перерв сну за ніч по тижнях"></canvas>
+      </div>
+
+      <!-- Narrative insight placed close to the chart that motivated it -->
+      <div class="insight-box">
+        <strong>Переломний момент (26 лютого 2024).</strong>
+        Протягом 18 тижнів кожна ніч мала ≥22 перерви.
+        На тижні 19–20 показник впав з 25 до 2.4 — скорочення на 90%
+        за один тиждень. 80% учасників (з ≥14 ночей спостережень)
+        завершили програму з меншою фрагментацією сну.
+      </div>
+    </div>
+
+
+    <!-- ── CHART 3: SLEEP STAGE COMPOSITION ──────────────── -->
+    <!--
+      WHY STACKED BAR?
+      We want to show COMPOSITION (how each month's sleep is
+      divided between stages) AND CHANGE over time.
+      Stacked bars are ideal: the absolute height shows total
+      sleep; relative widths show the proportion of each stage.
+      A % toggle helps compare proportions when absolute changes
+      obscure the story.
+    -->
+    <div class="chart-card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Структура сну по місяцях</div>
+          <div class="card-sub">REM · Глибокий · Легкий · Прокидання (хв)</div>
+        </div>
+      </div>
+
+      <!-- Mode toggle: absolute minutes vs percentage share -->
+      <div class="tabs" id="stageTabs">
+        <button class="tab-btn active" data-mode="abs">Хвилини</button>
+        <button class="tab-btn"        data-mode="pct">Частка %</button>
+      </div>
+
+      <div class="chart-wrap">
+        <canvas id="stagesChart" aria-label="Структура сну по місяцях"></canvas>
+      </div>
+
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--c-rem);"></div>
+          REM (швидкий)
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--c-deep);"></div>
+          Глибокий / SWS
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: #475569;"></div>
+          Легкий
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--c-wake);"></div>
+          Прокидання (WASO)
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /charts-grid -->
+
+
+  <!-- ══════════════════════════════════════════════════════════
+       FOOTER
+  ══════════════════════════════════════════════════════════ -->
+  <footer class="footer">
+    <p>
+      Дані: <em>Sleep2Ukraine</em> feasibility study ·
+      Kläger et al., PLOS ONE 2024 ·
+      <em>«Digital CBT-I for insomnia during armed conflict in Ukraine»</em>
+    </p>
+    <p>
+      Об'єктивний моніторинг: Oura Ring / Garmin ·
+      113 учасників · жовтень 2023 — березень 2024
+    </p>
+  </footer>
+
+</div><!-- /page -->
+
+
+<!-- ══════════════════════════════════════════════════════════
+     JAVASCRIPT — DATA + CHARTS
+     All three charts share the same tooltip style and
+     global Chart.js defaults defined once at the top.
+══════════════════════════════════════════════════════════ -->
+<script>
+"use strict";
+
+// ─────────────────────────────────────────────────────────────
+// 1. DATA
+//    Aggregated from daily_data_objective.xlsx via Python / pandas.
+//    Weekly values are arithmetic means across all participants
+//    who recorded a sleep entry that week.
+// ─────────────────────────────────────────────────────────────
+
+// Weekly aggregates (23 weeks: Oct 16 2023 → Mar 18 2024)
+// Fields: w=label, quality=subjective 1-10, score=device score,
+//         interruptions=avg nightly count, waso=wake-after-sleep-onset (min)
+const WEEKLY = [
+  { w:"Жовт 16", n:2,   quality:2.00, score:5.00, interruptions:22.5, waso:21.8 },
+  { w:"Жовт 23", n:25,  quality:6.00, score:6.64, interruptions:26.0, waso:46.6 },
+  { w:"Жовт 30", n:63,  quality:6.24, score:6.62, interruptions:27.0, waso:42.8 },
+  { w:"Лист 6",  n:125, quality:6.31, score:6.11, interruptions:26.0, waso:50.9 },
+  { w:"Лист 13", n:168, quality:6.57, score:6.22, interruptions:24.8, waso:46.9 },
+  { w:"Лист 20", n:176, quality:6.52, score:6.32, interruptions:25.6, waso:50.5 },
+  { w:"Лист 27", n:199, quality:6.47, score:6.43, interruptions:24.0, waso:42.3 },
+  { w:"Груд 4",  n:175, quality:6.45, score:6.41, interruptions:22.8, waso:35.2 },
+  { w:"Груд 11", n:186, quality:6.18, score:6.26, interruptions:24.6, waso:38.0 },
+  { w:"Груд 18", n:200, quality:6.14, score:6.35, interruptions:23.4, waso:36.8 },
+  { w:"Груд 25", n:162, quality:6.35, score:6.40, interruptions:25.0, waso:42.9 },
+  { w:"Січ 1",   n:107, quality:6.73, score:6.72, interruptions:25.0, waso:38.8 },
+  { w:"Січ 8",   n:117, quality:6.63, score:6.81, interruptions:22.5, waso:41.7 },
+  { w:"Січ 15",  n:108, quality:7.00, score:6.99, interruptions:24.9, waso:43.6 },
+  { w:"Січ 22",  n:105, quality:6.61, score:6.63, interruptions:23.7, waso:39.6 },
+  { w:"Січ 29",  n:119, quality:6.82, score:6.67, interruptions:24.1, waso:37.8 },
+  { w:"Лют 5",   n:121, quality:6.63, score:6.68, interruptions:24.9, waso:48.6 },
+  { w:"Лют 12",  n:93,  quality:6.61, score:6.60, interruptions:25.6, waso:50.4 },
+  { w:"Лют 19",  n:97,  quality:7.13, score:6.98, interruptions:13.8, waso:35.6 }, // ← transition begins
+  { w:"Лют 26",  n:107, quality:7.20, score:7.14, interruptions:2.4,  waso:30.1 }, // ← breakthrough week
+  { w:"Бер 4",   n:114, quality:6.95, score:6.25, interruptions:1.9,  waso:28.0 },
+  { w:"Бер 11",  n:94,  quality:6.98, score:6.55, interruptions:2.2,  waso:31.8 },
+  { w:"Бер 18",  n:26,  quality:7.54, score:6.46, interruptions:2.2,  waso:31.5 },
+];
+
+// Monthly sleep-stage composition (minutes per night, averaged across users)
+// rem=REM sleep, deep=slow-wave/SWS, light=light NREM, wake=WASO
+const MONTHLY = [
+  { m:"Жовтень",  rem:90.1,  deep:60.2, light:156.6, wake:41.4 },
+  { m:"Листопад", rem:94.8,  deep:64.4, light:152.2, wake:47.7 },
+  { m:"Грудень",  rem:106.7, deep:75.9, light:147.2, wake:38.5 },
+  { m:"Січень",   rem:104.1, deep:73.5, light:152.4, wake:40.6 },
+  { m:"Лютий",    rem:96.7,  deep:68.4, light:136.9, wake:41.5 },
+  { m:"Березень", rem:78.5,  deep:54.3, light:102.4, wake:30.6 },
+];
+
+
+// ─────────────────────────────────────────────────────────────
+// 2. GLOBAL CHART.JS DEFAULTS
+//    Applied once — all charts inherit these settings
+// ─────────────────────────────────────────────────────────────
+
+Chart.defaults.color          = "#8899bb";
+Chart.defaults.borderColor    = "#1c2d45";
+Chart.defaults.font.family    = "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif";
+Chart.defaults.font.size      = 11;
+Chart.defaults.animation.duration = 800;
+
+// Shared tooltip style object — reused by every chart
+const TOOLTIP_STYLE = {
+  backgroundColor : "#0d1729",
+  borderColor     : "#1c2d45",
+  borderWidth     : 1,
+  titleColor      : "#e6edf7",
+  bodyColor       : "#8899bb",
+  padding         : 10,
+  cornerRadius    : 8,
+  boxPadding      : 4,
+};
+
+
+// ─────────────────────────────────────────────────────────────
+// 3. CHART 1 — SLEEP QUALITY TIMELINE
+//    Type: Line (filled area for subjective quality, dashed for
+//    device score).  Dual series allows the viewer to compare
+//    self-reported vs sensor-measured sleep quality and see how
+//    both trend upward over the programme.
+// ─────────────────────────────────────────────────────────────
+
+new Chart(document.getElementById("qualityChart"), {
+  type: "line",
+  data: {
+    labels: WEEKLY.map(d => d.w),
+    datasets: [
+
+      // Subjective quality — filled area emphasises the trend
+      {
+        label    : "Суб'єктивна якість",
+        data     : WEEKLY.map(d => d.quality),
+        borderColor      : "#10b981",
+        backgroundColor  : "rgba(16,185,129,0.1)",
+        borderWidth      : 2.5,
+        fill             : true,
+        tension          : 0.4,   // slight curve for readability
+        pointRadius      : 3,
+        pointHoverRadius : 7,
+        pointBackgroundColor: "#10b981",
+        yAxisID: "y",
+      },
+
+      // Device score — dashed so it reads as "secondary" info
+      {
+        label    : "Оцінка пристрою",
+        data     : WEEKLY.map(d => d.score),
+        borderColor      : "#f59e0b",
+        backgroundColor  : "transparent",
+        borderWidth      : 2,
+        borderDash       : [6, 3],
+        fill             : false,
+        tension          : 0.4,
+        pointRadius      : 2,
+        pointHoverRadius : 5,
+        pointBackgroundColor: "#f59e0b",
+        yAxisID: "y",
+      },
+    ],
+  },
+  options: {
+    responsive          : true,
+    maintainAspectRatio : false,
+    // Show values for BOTH datasets at the same x position on hover
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend : { display: false },  // custom legend in HTML
+      tooltip: {
+        ...TOOLTIP_STYLE,
+        callbacks: {
+          title : items  => `Тиждень ${items[0].label}  (n=${WEEKLY[items[0].dataIndex].n})`,
+          label : item   => ` ${item.dataset.label}: ${item.raw.toFixed(2)}`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid : { color: "#1c2d45", drawTicks: false },
+        // Limit visible labels to avoid crowding on small screens
+        ticks: { maxRotation: 45, maxTicksLimit: 12 },
+      },
+      y: {
+        min  : 4, max: 10,
+        grid : { color: "#1c2d45" },
+        ticks: { callback: v => v.toFixed(1) },
+        title: {
+          display: true,
+          text   : "Оцінка (1–10)",
+          color  : "#3a4a6a",
+          font   : { size: 10 },
+        },
+      },
+    },
+  },
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// 4. CHART 2 — SLEEP INTERRUPTIONS BAR CHART
+//    Type: Bar.  The height difference between "before" and
+//    "after" bars is the story: 26 vs 2.  Colour encodes
+//    severity (red=high, amber=transitional, green=low) so
+//    the viewer immediately grasps the shift without needing
+//    to read axis labels.
+// ─────────────────────────────────────────────────────────────
+
+// Assign a colour based on magnitude
+function barColour(val) {
+  if (val > 20) return "rgba(239,68,68,0.75)";  // red  — high
+  if (val > 8)  return "rgba(251,191,36,0.75)";  // amber — transitional
+  return             "rgba(34,197,94,0.75)";      // green — low
+}
+
+new Chart(document.getElementById("interruptChart"), {
+  type: "bar",
+  data: {
+    labels: WEEKLY.map(d => d.w),
+    datasets: [{
+      label           : "Перерв за ніч",
+      data            : WEEKLY.map(d => d.interruptions),
+      backgroundColor : WEEKLY.map(d => barColour(d.interruptions)),
+      borderColor     : WEEKLY.map(d => barColour(d.interruptions).replace("0.75","1")),
+      borderWidth     : 1,
+      borderRadius    : 4,
+    }],
+  },
+  options: {
+    responsive          : true,
+    maintainAspectRatio : false,
+    plugins: {
+      legend : { display: false },
+      tooltip: {
+        ...TOOLTIP_STYLE,
+        callbacks: {
+          title : items => `Тиждень ${items[0].label}`,
+          label : item  => ` Перерв: ${item.raw.toFixed(1)} за ніч`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid : { display: false },
+        ticks: { maxRotation: 45, maxTicksLimit: 12 },
+      },
+      y: {
+        grid : { color: "#1c2d45" },
+        ticks: { callback: v => Math.round(v) },
+        title: {
+          display: true,
+          text   : "Середня кількість перерв",
+          color  : "#3a4a6a",
+          font   : { size: 10 },
+        },
+      },
+    },
+  },
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// 5. CHART 3 — SLEEP STAGE STACKED BAR (with toggle)
+//    Type: Stacked Bar.  Shows COMPOSITION — how each month's
+//    sleep budget is split between REM, deep, light and wake.
+//    A mode toggle lets the viewer switch between absolute
+//    minutes (useful for "did total sleep increase?") and
+//    percentage share (useful for "did sleep quality improve?").
+// ─────────────────────────────────────────────────────────────
+
+let stagesChartInstance = null;
+
+function buildStagesChart(mode) {
+  // Convert raw minutes to percentage share if needed
+  const rows = MONTHLY.map(d => {
+    if (mode === "pct") {
+      const total = d.rem + d.deep + d.light + d.wake;
+      return {
+        rem  : +(d.rem   / total * 100).toFixed(1),
+        deep : +(d.deep  / total * 100).toFixed(1),
+        light: +(d.light / total * 100).toFixed(1),
+        wake : +(d.wake  / total * 100).toFixed(1),
+      };
+    }
+    return { rem: d.rem, deep: d.deep, light: d.light, wake: d.wake };
+  });
+
+  const suffix = mode === "pct" ? "%" : " хв";
+
+  // Destroy previous instance before creating a new one
+  if (stagesChartInstance) stagesChartInstance.destroy();
+
+  stagesChartInstance = new Chart(document.getElementById("stagesChart"), {
+    type: "bar",
+    data: {
+      labels: MONTHLY.map(d => d.m),
+      datasets: [
+        {
+          label          : "REM",
+          data           : rows.map(d => d.rem),
+          backgroundColor: "rgba(124,58,237,0.80)",
+          borderColor    : "#7c3aed",
+          borderWidth    : 1,
+        },
+        {
+          label          : "Глибокий / SWS",
+          data           : rows.map(d => d.deep),
+          backgroundColor: "rgba(2,132,199,0.80)",
+          borderColor    : "#0284c7",
+          borderWidth    : 1,
+        },
+        {
+          label          : "Легкий",
+          data           : rows.map(d => d.light),
+          backgroundColor: "rgba(71,85,105,0.75)",
+          borderColor    : "#475569",
+          borderWidth    : 1,
+        },
+        {
+          label          : "Прокидання (WASO)",
+          data           : rows.map(d => d.wake),
+          backgroundColor: "rgba(220,38,38,0.70)",
+          borderColor    : "#dc2626",
+          borderWidth    : 1,
+        },
+      ],
+    },
+    options: {
+      responsive          : true,
+      maintainAspectRatio : false,
+      plugins: {
+        legend : { display: false },
+        tooltip: {
+          ...TOOLTIP_STYLE,
+          callbacks: {
+            label: item => ` ${item.dataset.label}: ${parseFloat(item.raw).toFixed(1)}${suffix}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          grid   : { display: false },
+        },
+        y: {
+          stacked: true,
+          grid   : { color: "#1c2d45" },
+          ticks  : { callback: v => v + (mode === "pct" ? "%" : "") },
+          title  : {
+            display: true,
+            text   : mode === "pct" ? "Частка (%)" : "Хвилини",
+            color  : "#3a4a6a",
+            font   : { size: 10 },
+          },
+        },
+      },
+    },
+  });
+}
+
+// Initial render
+buildStagesChart("abs");
+
+// Tab click handler — rebuild chart with new mode
+document.getElementById("stageTabs").addEventListener("click", e => {
+  const btn = e.target.closest(".tab-btn");
+  if (!btn) return;
+
+  // Update active state
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+
+  buildStagesChart(btn.dataset.mode);
+});
+
+</script>
+</body>
+</html>
